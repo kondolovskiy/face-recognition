@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Some image recognition</title>
+    <script src="face-api.js"></script>
+    <style>
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 999999;
+        }
+        #myImg {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+<img id="myImg" src="./3.jpg" />
+<canvas id="overlay" />
+
+<script>
+
+    async function run() {
+        await faceapi.loadSsdMobilenetv1Model('./weights');
+        await faceapi.loadFaceLandmarkModel('./weights');
+        await faceapi.loadFaceRecognitionModel('./weights');
+        console.log(faceapi.nets);
+
+        const input = document.getElementById('myImg')
+
+        const detections = await faceapi.detectAllFaces(input);
+        const fullFaceDescriptions = await faceapi.detectAllFaces(input).withFaceLandmarks().withFaceDescriptors();
+
+        matchData(fullFaceDescriptions);
+
+        const detectionsForSize = faceapi.resizeResults(detections, { width: input.width, height: input.height })
+
+        const canvas = document.getElementById('overlay');
+        canvas.width = input.width;
+        canvas.height = input.height;
+//        faceapi.drawDetection(canvas, detectionsForSize, { withScore: true });
+    }
+
+    async function matchData(fullFaceDescriptions) {
+        const model = await fetch('./model.json');
+        const modelData = await model.json();
+
+        const labeledFaceDescriptors = deserialize(modelData);
+
+        const maxDescriptorDistance = 0.6;
+        const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, maxDescriptorDistance);
+
+        const results = fullFaceDescriptions.map(fd => faceMatcher.findBestMatch(fd.descriptor));
+
+        const boxesWithText = results.map((bestMatch, i) => {
+            const box = fullFaceDescriptions[i].detection.box;
+            const text = bestMatch.toString();
+            const boxWithText = new faceapi.BoxWithText(box, text);
+            return boxWithText;
+        });
+        const canvas = document.getElementById('overlay');
+
+        faceapi.drawDetection(canvas, boxesWithText)
+    }
+
+
+    function deserialize(data) {
+        return data.map(object => {
+            const descriptors = object.descriptors.map(d => new Float32Array(d));
+
+            return new faceapi.LabeledFaceDescriptors(
+                object.label,
+                descriptors
+            );
+        })
+    }
+
+    document.onreadystatechange = () => {
+        if (document.readyState === 'complete') {
+            run();
+        }
+    };
+
+
+
+</script>
+</body>
+</html>

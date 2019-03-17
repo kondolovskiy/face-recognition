@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script src="face-api.js"></script>
+</head>
+<body>
+
+<div id="container"></div>
+
+<script>
+
+    async function run() {
+        await faceapi.loadSsdMobilenetv1Model('./weights');
+        await faceapi.loadFaceLandmarkModel('./weights');
+        await faceapi.loadFaceRecognitionModel('./weights');
+
+        matchData()
+    }
+
+    async function matchData() {
+        const labels = ['viktor', 'andriy', 'roman_g', 'roman_l', 'artem'];
+
+        const labeledFaceDescriptors = await Promise.all(
+            labels.map(async label => {
+                // fetch image data from urls and convert blob to HTMLImage element
+                let faceDescriptors = [];
+                for(let i = 1; i <= 10; i++) {
+                    const imgUrl = `./images/${label}/${i}.png`;
+                    const img = await faceapi.fetchImage(imgUrl);
+                    if(img) {
+                        // detect the face with the highest score in the image and compute it's landmarks and face descriptor
+                        const fullFaceDescription = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor()
+
+                        if (fullFaceDescription) {
+                            faceDescriptors.push(fullFaceDescription.descriptor);
+                        }
+                    }
+                }
+
+                return new faceapi.LabeledFaceDescriptors(label, faceDescriptors);
+            })
+        );
+
+
+        const data = serialize(labeledFaceDescriptors);
+
+        document.write(JSON.stringify(data));
+    }
+
+    function serialize(descriptors) {
+        return descriptors.map(descriptor => {
+            const descriptors = descriptor.descriptors.map(d => Array.from(d));
+            return {
+                label: descriptor.label,
+                descriptors
+            }
+        })
+    }
+
+    document.onreadystatechange = () => {
+        if (document.readyState === 'complete') {
+            run();
+        }
+    };
+
+
+</script>
+</body>
+</html>

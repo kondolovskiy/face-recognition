@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>video detector</title>
+    <script src="face-api.js"></script>
+
+    <style>
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 999999;
+        }
+        #inputVideo {
+            position: relative;
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+<div style="position: relative" class="margin">
+    <video onplay="onPlay(this)" id="inputVideo" autoplay muted></video>
+    <canvas id="overlay" />
+</div>
+
+
+<script>
+    var labeledFaceDescriptors;
+
+    function getFaceDetectorOptions() {
+        let minConfidence = 0.5
+        return faceapi.SsdMobilenetv1Options({ minConfidence })
+    }
+
+    function resizeCanvasAndResults(dimensions, canvas, results) {
+        const { width, height } = dimensions instanceof HTMLVideoElement
+            ? faceapi.getMediaDimensions(dimensions)
+            : dimensions;
+        canvas.width = width;
+        canvas.height = height;
+
+        // resize detections (and landmarks) in case displayed image is smaller than
+        // original size
+        return faceapi.resizeResults(results, { width, height })
+    }
+
+    function drawDetections(dimensions, canvas, detections) {
+        const resizedDetections = resizeCanvasAndResults(dimensions, canvas, detections)
+        faceapi.drawDetection(canvas, resizedDetections)
+    }
+
+    async function onPlay() {
+        const videoEl = document.getElementById('inputVideo');
+
+        if(videoEl.paused || videoEl.ended)
+            return setTimeout(() => onPlay());
+
+
+        const options = getFaceDetectorOptions();
+
+
+        const result2 = await faceapi.detectSingleFace(videoEl, options).withFaceLandmarks().withFaceDescriptor();
+
+        if(result2 && labeledFaceDescriptors) {
+            matchData(result2);
+        }
+
+//        const result = await faceapi.detectSingleFace(videoEl, options);
+//        if (result) {
+//            drawDetections(videoEl, document.getElementById('overlay'), [result])
+//        }
+
+        setTimeout(() => onPlay())
+    }
+
+    async function matchData(fullFaceDescription) {
+
+        const maxDescriptorDistance = 0.6;
+        const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, maxDescriptorDistance);
+
+        const result = faceMatcher.findBestMatch(fullFaceDescription.descriptor);
+
+        const box = fullFaceDescription.detection.box;
+        const text = result.toString();
+        const boxWithText = new faceapi.BoxWithText(box, text);
+        const canvas = document.getElementById('overlay');
+        const video = document.getElementById('inputVideo');
+
+        drawDetections(video, canvas, boxWithText);
+
+        const name = text.split(' ')[0];
+
+//        setTimeout(() => {
+//            window.location.href=`http://${name}.cliodev.dk/myclio`
+//        }, 2000);
+    }
+
+    async function run() {
+        await faceapi.loadSsdMobilenetv1Model('./weights');
+        await faceapi.loadFaceLandmarkModel('./weights');
+        await faceapi.loadFaceRecognitionModel('./weights');
+
+        const model = await fetch('./model.json');
+        const modelData = await model.json();
+
+        labeledFaceDescriptors = deserialize(modelData);
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+        const videoEl = document.getElementById('inputVideo');
+        videoEl.srcObject = stream
+    }
+
+    function deserialize(data) {
+        return data.map(object => {
+            const descriptors = object.descriptors.map(d => new Float32Array(d));
+
+            return new faceapi.LabeledFaceDescriptors(
+                object.label,
+                descriptors
+            );
+        })
+    }
+
+    document.onreadystatechange = () => {
+        if (document.readyState === 'complete') {
+            run();
+        }
+    };
+</script>
+</body>
+</html>
